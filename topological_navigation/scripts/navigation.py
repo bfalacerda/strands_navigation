@@ -81,8 +81,9 @@ class TopologicalNavServer(object):
         self.actions_needed=[]
 
         move_base_actions = ['move_base', 'human_aware_navigation','han_adapt_speed','han_vc_corridor','han_vc_junction']
+        continuos_actions = ['row_traversal'] # Actions that are not move_base but can be triggered one after the other
         self.move_base_actions = rospy.get_param('~move_base_actions', move_base_actions)
-
+        self.continuos_actions = rospy.get_param('~continuous_actions', continuos_actions)
 
         # what service are we using as move_base?
         self.move_base_name = rospy.get_param('~move_base_name', 'move_base')
@@ -283,11 +284,19 @@ class TopologicalNavServer(object):
                 if self.navigation_activated :  #is the action server active?
                     if self.stat:
                         self.stat.set_at_node()
-                    # if the robot reached and intermediate node and the next action is move base goal has been reached
-                    if self.current_node == self.current_target and self._target != self.current_target and self.next_action in self.move_base_actions and self.current_action in self.move_base_actions :
-                        rospy.loginfo('intermediate node reached %s', self.current_node)
-                        self.goal_reached=True
-
+                    # if the robot reached an intermediate node 
+                    if self.current_node == self.current_target and self._target != self.current_target:
+                        # are the next and current actions move base type?
+                        if self.next_action in self.move_base_actions and self.current_action in self.move_base_actions:
+                            # then set goal as reached
+                            rospy.loginfo('intermediate node reached %s', self.current_node)
+                            self.goal_reached=True
+                        # If not are these actions continuos? 
+                        # please note that these cases are different because we want the robot to actually navigate to the exact waypoint 
+                        # before triggering a continuos action and before triggering a move base action
+                        elif self.next_action in self.continuos_actions and self.current_action in self.continuos_actions:
+                            rospy.loginfo('intermediate node reached %s continuing action', self.current_node)
+                            self.goal_reached=True
 
     """
      Navigate
@@ -456,7 +465,7 @@ class TopologicalNavServer(object):
             if a not in self.move_base_actions :
                 move_base_act= False
                 for i in o_node.edges :
-                    # Check if there is a move_base action in the edages of this node
+                    # Check if there is a move_base action in the edges of this node
                     # if not is dangerous to move
                     if i.action in self.move_base_actions :
                         move_base_act = True
@@ -524,8 +533,6 @@ class TopologicalNavServer(object):
             nav_ok, inc = self.monitored_navigation(inf, a)
             params = { 'yaw_goal_tolerance' : 0.087266, 'xy_goal_tolerance':0.1 }   #5 degrees tolerance   'max_vel_x':0.55,
             self.reconfigure_movebase_params(params)
-
-
 
 
             not_fatal=nav_ok
